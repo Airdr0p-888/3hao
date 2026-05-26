@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 9射代币</title>
+  <title>莫大 MODA MINT — 1射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -1382,7 +1382,7 @@ function buildParamsPreview(p, vanityResult, gasBNB){
     ['税费分配', '营销:' + (p.marketingBps/100) + '% 燃烧:' + (p.burnBps/100) + '% 分红:' + (p.dividendBps/100) + '% 流动性:' + (p.liquidityBps/100) + '%'],
     ['资金钱包', p.marketingWallet],
     ['分红代币', p.dividendToken === ethers.constants.AddressZero ? 'WBNB (默认)' : p.dividendToken],
-    ['分红最低持仓', ethers.utils.formatUnits(p.minHoldForDividend, 0) + ' 代币'],
+    ['分红最低持仓', ethers.utils.formatUnits(p.minHoldForDividend, 18) + ' 代币'],
     ['白名单 Mint', p.whitelistMintOnly ? '仅白名单可 Mint' : '公开 Mint（所有人可参加）'],
     ['预售代币比例', p.presaleTokenPct + '% (LP: ' + (100 - p.presaleTokenPct) + '%)'],
   ];
