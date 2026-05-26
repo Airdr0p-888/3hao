@@ -415,21 +415,20 @@
   </style>
   <!-- ethers.js v5 本地文件 + 合约编译数据 -->
   <script src="ethers.umd.min.js"></script>
-  <script src="contract_data.js?v=20260525h"></script>
+  <script src="contract_data.js?v=20260526j"></script>
   <script>
-    // 合约代码版本校验 — 检查 bytecode 长度确保是最新编译版本
+    // 合约代码版本校验 — v20260526j: receive()→mint() 自动转账
     if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
       var bcLen = CONTRACT_DATA.BYTECODE.length;
-      console.log('[版本检测] BYTECODE 长度:', bcLen);
+      console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27028 (=0x前缀+27026 hex)');
       var bcLower = CONTRACT_DATA.BYTECODE.toLowerCase().replace('0x','');
-      // 新版包含 "Wallet zero" 和 "Mint cost"
-      var hasWalletZero = bcLower.indexOf('57616c6c6574207a65726f') !== -1;
-      var hasMintCost = bcLower.indexOf('4d696e7420636f7374') !== -1;
-      console.log('[版本检测] Wallet zero:', hasWalletZero, '| Mint cost:', hasMintCost);
-      if(hasWalletZero && hasMintCost){
-        console.log('[版本检测] ✅ contract_data.js 为最新编译版本（无 2 BNB 限制）');
+      // 检查 receive→mint dispatch 特征: CALLDATASIZE ISZERO PUSH2 JUMPI 链
+      var hasReceiveDispatch = bcLower.indexOf('361561') !== -1; // CALLDATASIZE ISZERO PUSH2
+      console.log('[版本检测] receive→mint dispatch:', hasReceiveDispatch);
+      if(bcLen === 27028 && hasReceiveDispatch){
+        console.log('[版本检测] ✅ 最新版合约（含 receive→mint 自动转账）');
       } else {
-        console.warn('[版本检测] ⚠️ contract_data.js 可能不是最新版本，建议 Ctrl+Shift+R 强制刷新');
+        console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27028);
       }
     }
   </script>
