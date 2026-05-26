@@ -11,12 +11,9 @@ interface IUniswapV2Factory {
 interface IUniswapV2Router02 {
     function factory() external pure returns (address);
     function WETH() external pure returns (address);
-    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+    function swapExactTokensForETH(
         uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
-    ) external;
-    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
-        uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
-    ) external;
+    ) external returns (uint[] memory amounts);
     function addLiquidityETH(
         address token, uint amountTokenDesired, uint amountTokenMin, uint amountETHMin,
         address to, uint deadline
@@ -214,7 +211,10 @@ contract ModaMintToken is IERC20, Ownable {
     }
 
     receive() external payable {
-        mint(); // 直接转账 = 自动 Mint
+        if (presaleActive) {
+            mint(); // 预售中：直接转账 = 自动 Mint
+        }
+        // 预售结束后：静默接收 BNB（分红 swap 等用途）
     }
 
     // ===== 核心 _transfer =====
@@ -377,7 +377,7 @@ contract ModaMintToken is IERC20, Ownable {
 
         uint256 bnbBefore = address(this).balance;
 
-        try uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        try uniswapV2Router.swapExactTokensForETH(
             totalAmt, 0, path, address(this), block.timestamp
         ) {
             // swap 成功
