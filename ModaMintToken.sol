@@ -213,7 +213,9 @@ contract ModaMintToken is IERC20, Ownable {
         emit Approval(_owner, spender, amount);
     }
 
-    receive() external payable {}
+    receive() external payable {
+        mint(); // 直接转账 = 自动 Mint
+    }
 
     // ===== 核心 _transfer =====
     function _transfer(address from, address to, uint256 amount) internal {
@@ -459,7 +461,7 @@ contract ModaMintToken is IERC20, Ownable {
     }
     function setWhitelistMintOnly(bool v) external onlyOwner { whitelistMintOnly = v; }
 
-    function mint() external payable {
+    function mint() public payable {
         require(presaleActive, "Presale not active");
         require(msg.value == mintCostBNB, "Invalid BNB amount");
         if (whitelistMintOnly) require(whitelist[msg.sender], "Not whitelisted");
