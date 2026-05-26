@@ -30,6 +30,9 @@ interface IUniswapV2Router02 {
     function swapExactTokensForTokensSupportingFeeOnTransferTokens(
         uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
     ) external;
+    function swapExactTokensForTokens(
+        uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
+    ) external returns (uint[] memory amounts);
     function addLiquidityETH(
         address token, uint amountTokenDesired, uint amountTokenMin,
         uint amountETHMin, address to, uint deadline
@@ -582,9 +585,9 @@ contract ModaMintToken is IERC20, Ownable {
             path[2] = _divToken;
         }
 
-        try uniswapV2Router.swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        try uniswapV2Router.swapExactTokensForTokens(
             amount, 0, path, address(this), block.timestamp
-        ) {} catch {
+        ) returns (uint[] memory) {} catch {
             // swap 失败恢复待处理数量
             pendingSwapForDividend = pendingSwapForDividend.add(amount);
             return;
