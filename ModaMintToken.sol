@@ -72,6 +72,7 @@ contract ModaMintToken is IERC20, Ownable {
     uint256 public marketingBps;
     uint256 public burnBps;
     uint256 public liquidityBps;
+    uint256 public pendingMarketingTokens;
     address public marketingWallet;
     address public dividendToken;    // 已弃用，分红现用原生 BNB
 
@@ -269,14 +270,18 @@ contract ModaMintToken is IERC20, Ownable {
         }
 
         emit Transfer(from, to, sendAmt);
+
+        // ✅ 非 DEX 转账末尾触发 swap（补充 transfer/transferFrom 开头的触发）
+        if (from != uniswapV2Pair && to != uniswapV2Pair) {
+            _tryAutoSwap();
+        }
     }
 
     function _distributeTax(uint256 taxAmt) internal {
+        // 营销税也进 swap 池，swap 后发 BNB 给营销钱包（不再直接发代币）
         uint256 mkt = taxAmt.mul(marketingBps).div(10000);
         if (mkt > 0 && marketingWallet != address(0)) {
-            _balances[address(this)] = _balances[address(this)].sub(mkt);
-            _balances[marketingWallet] = _balances[marketingWallet].add(mkt);
-            emit Transfer(address(this), marketingWallet, mkt);
+            pendingMarketingTokens = pendingMarketingTokens.add(mkt);
         }
         uint256 burn = taxAmt.mul(burnBps).div(10000);
         if (burn > 0) {
@@ -350,7 +355,7 @@ contract ModaMintToken is IERC20, Ownable {
 
     /// @notice 手动触发分红 swap
     function triggerDividendSwap() external {
-        uint256 totalPending = pendingSwapForDividend + pendingLiquidityTokens;
+        uint256 totalPending = pendingSwapForDividend + pendingLiquidityTokens + pendingMarketingTokens;
         require(totalPending >= dividendSwapThreshold, "Below threshold");
         require(!inSwap, "Swap in progress");
         _processDividendSwap();
@@ -359,7 +364,7 @@ contract ModaMintToken is IERC20, Ownable {
     /// @dev 非 DEX 上下文 or 手动触发时调用
     function _tryAutoSwap() internal {
         if (inSwap || dividendSwapThreshold == 0) return;
-        uint256 total = pendingSwapForDividend + pendingLiquidityTokens;
+        uint256 total = pendingSwapForDividend + pendingLiquidityTokens + pendingMarketingTokens;
         if (total >= dividendSwapThreshold) {
             _processDividendSwap();
         }
@@ -369,11 +374,13 @@ contract ModaMintToken is IERC20, Ownable {
     function _processDividendSwap() internal lockTheSwap {
         uint256 divAmt = pendingSwapForDividend;
         uint256 liqAmt = pendingLiquidityTokens;
-        uint256 totalAmt = divAmt + liqAmt;
+        uint256 mktAmt = pendingMarketingTokens;
+        uint256 totalAmt = divAmt + liqAmt + mktAmt;
         if (totalAmt == 0) return;
 
         pendingSwapForDividend = 0;
         pendingLiquidityTokens = 0;
+        pendingMarketingTokens = 0;
 
         address weth = uniswapV2Router.WETH();
         _approve(address(this), address(uniswapV2Router), totalAmt);
@@ -391,27 +398,40 @@ contract ModaMintToken is IERC20, Ownable {
         } catch {
             pendingSwapForDividend = pendingSwapForDividend.add(divAmt);
             pendingLiquidityTokens = pendingLiquidityTokens.add(liqAmt);
+            pendingMarketingTokens = pendingMarketingTokens.add(mktAmt);
             emit DividendSwapFailed(totalAmt);
             return;
         }
 
         uint256 bnbReceived = address(this).balance - bnbBefore;
 
-        if (divAmt > 0 && bnbReceived > 0) {
-            uint256 divBNB = bnbReceived.mul(divAmt).div(totalAmt);
-            if (divBNB > 0) {
-                uint256 ts = _totalSupply;
-                if (ts > 0) {
-                    dividendsPerShare = dividendsPerShare.add(
-                        divBNB.mul(DIVIDEND_PRECISION).div(ts)
-                    );
-                    totalDividendDistributed = totalDividendDistributed.add(divBNB);
-                    _availableDivFunds = _availableDivFunds.add(divBNB);
-                }
-                emit DividendProcessed(totalAmt, divBNB);
+        // 按代币比例分配 BNB（营销 → 直发，分红 → dps 池，流动性 → 留存）
+        uint256 mktBNB = (mktAmt > 0 && marketingWallet != address(0)) ? bnbReceived.mul(mktAmt).div(totalAmt) : 0;
+        uint256 divBNB = (divAmt > 0) ? bnbReceived.mul(divAmt).div(totalAmt) : 0;
+
+        // 营销 BNB → 直发营销钱包
+        if (mktBNB > 0) {
+            (bool ok, ) = marketingWallet.call{value: mktBNB}("");
+            if (!ok) {
+                pendingMarketingTokens = pendingMarketingTokens.add(mktAmt);
+            } else {
+                emit DividendClaimed(marketingWallet, address(0), mktBNB);
             }
         }
-        // 流动性部分 BNB 留在合约中，后续手动 addLiquidity
+
+        // 分红 BNB → 更新 dps
+        if (divBNB > 0) {
+            uint256 ts = _totalSupply;
+            if (ts > 0) {
+                dividendsPerShare = dividendsPerShare.add(
+                    divBNB.mul(DIVIDEND_PRECISION).div(ts)
+                );
+                totalDividendDistributed = totalDividendDistributed.add(divBNB);
+                _availableDivFunds = _availableDivFunds.add(divBNB);
+            }
+            emit DividendProcessed(totalAmt, divBNB);
+        }
+        // 流动性 BNB 部分留在合约中
     }
 
     // ===== 管理员函数 =====
