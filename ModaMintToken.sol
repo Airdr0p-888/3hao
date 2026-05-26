@@ -482,10 +482,8 @@ contract ModaMintToken is IERC20, Ownable {
 
             // 自动加底池：合约剩余代币 + 募集 BNB 配对加流动性
             _addInitialLiquidity();
-        }
 
-        // 首次 mint 自动开启交易
-        if (!tradingActive) {
+            // 加完底池后才开启交易
             tradingActive = true;
             emit TradingEnabled();
         }
@@ -510,6 +508,8 @@ contract ModaMintToken is IERC20, Ownable {
         );
     }
 
+    event InitialLiquidityAdded(uint256 tokens, uint256 bnb);
+
     /// @dev 预售满时自动加初始流动性（用合约剩余代币 + 募集 BNB）
     function _addInitialLiquidity() internal {
         uint256 tokenBal = _balances[address(this)];
@@ -527,8 +527,10 @@ contract ModaMintToken is IERC20, Ownable {
         pendingLiquidityTokens = 0;
 
         _approve(address(this), address(uniswapV2Router), lpTokens);
-        uniswapV2Router.addLiquidityETH{value: bnbBal}(
+        (uint256 tokenUsed, uint256 bnbUsed, ) = uniswapV2Router.addLiquidityETH{value: bnbBal}(
             address(this), lpTokens, 0, 0, owner(), block.timestamp
         );
+
+        emit InitialLiquidityAdded(tokenUsed, bnbUsed);
     }
 }
