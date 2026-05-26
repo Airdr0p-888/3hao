@@ -1,8 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+interface IERC20 {
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+}
+
+library SafeMath {
+    function tryAdd(uint256 a, uint256 b) internal pure returns (bool, uint256) { unchecked { uint256 c = a + b; if (c < a) return (false, 0); return (true, c); } }
+    function trySub(uint256 a, uint256 b) internal pure returns (bool, uint256) { unchecked { if (b > a) return (false, 0); return (true, a - b); } }
+    function tryMul(uint256 a, uint256 b) internal pure returns (bool, uint256) { unchecked { if (a == 0) return (true, 0); uint256 c = a * b; if (c / a != b) return (false, 0); return (true, c); } }
+    function tryDiv(uint256 a, uint256 b) internal pure returns (bool, uint256) { unchecked { if (b == 0) return (false, 0); return (true, a / b); } }
+    function tryMod(uint256 a, uint256 b) internal pure returns (bool, uint256) { unchecked { if (b == 0) return (false, 0); return (true, a % b); } }
+    function add(uint256 a, uint256 b) internal pure returns (uint256) { return a + b; }
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) { return a - b; }
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) { return a * b; }
+    function div(uint256 a, uint256 b) internal pure returns (uint256) { return a / b; }
+    function mod(uint256 a, uint256 b) internal pure returns (uint256) { return a % b; }
+    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) { unchecked { require(b <= a, errorMessage); return a - b; } }
+    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) { unchecked { require(b > 0, errorMessage); return a / b; } }
+    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) { unchecked { require(b > 0, errorMessage); return a % b; } }
+}
 
 interface IUniswapV2Factory {
     function createPair(address tokenA, address tokenB) external returns (address pair);
@@ -193,19 +217,11 @@ contract ModaMintToken is IERC20, Ownable {
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
-        // ✅ 非 DEX 上下文触发分红 swap（Pair/Router 调用时不触发）
-        if (msg.sender != uniswapV2Pair && msg.sender != address(uniswapV2Router)) {
-            _tryAutoSwap();
-        }
         _transfer(msg.sender, to, amount);
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
-        // ✅ 非 DEX 上下文触发分红 swap（Router 调用时不触发）
-        if (msg.sender != address(uniswapV2Router) && msg.sender != uniswapV2Pair) {
-            _tryAutoSwap();
-        }
         uint256 currentAllowance = _allowances[from][msg.sender];
         require(currentAllowance >= amount, "ERC20: exceed allowance");
         unchecked { _approve(from, msg.sender, currentAllowance - amount); }
@@ -231,6 +247,11 @@ contract ModaMintToken is IERC20, Ownable {
         require(from != address(0) && to != address(0), "Zero address");
         require(amount > 0, "Amount zero");
         require(_balances[from] >= amount, "Insufficient balance");
+
+        // 在 DEX 交易开始时触发分红 swap（仅卖出/转帐时，买入时 Pair 锁定不可重入）
+        if (from != uniswapV2Pair) {
+            _tryAutoSwap();
+        }
 
         bool isDexTransfer = (from == uniswapV2Pair || to == uniswapV2Pair);
         if (isDexTransfer && !tradingActive) {
@@ -270,11 +291,6 @@ contract ModaMintToken is IERC20, Ownable {
         }
 
         emit Transfer(from, to, sendAmt);
-
-        // ✅ 非 DEX 转账末尾触发 swap（补充 transfer/transferFrom 开头的触发）
-        if (from != uniswapV2Pair && to != uniswapV2Pair) {
-            _tryAutoSwap();
-        }
     }
 
     function _distributeTax(uint256 taxAmt) internal {
