@@ -707,8 +707,8 @@
       </div>
       <div class="form-group" style="margin-top:12px">
         <label class="form-label">分红代币地址</label>
-        <input type="text" id="div-addr" placeholder="0x... （可选，留空默认分红 USDT）" />
-        <span class="form-hint">持有者将获得此代币分红，留空默认 USDT</span>
+        <input type="text" id="div-addr" placeholder="0x... （可选，留空默认分红 WBNB）" />
+        <span class="form-hint">持有者将获得此代币分红，留空默认 WBNB（BSC 原生代币，池深最大）</span>
       </div>
       <div class="form-group" style="margin-top:12px">
         <label class="form-label">最低持币数量（分红门槛）</label>
@@ -929,7 +929,7 @@
             <button onclick="adminSetDividendThreshold()" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;box-shadow:0 2px 8px rgba(22,163,74,.35)">设置阈值</button>
           </div>
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
-            <button onclick="adminProcessDividend()" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600">🔄 处理分红 (swap → USDT)</button>
+            <button onclick="adminProcessDividend()" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600">🔄 处理分红 (swap → WBNB)</button>
             <button onclick="adminProcessLiquidity()" style="background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600">💧 处理流动性 (swap → BNB)</button>
             <button onclick="adminProcessAll()" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600">⚡ 一键处理全部</button>
             <span id="admin-div-info" style="font-size:.75rem;color:var(--text-muted)"></span>
@@ -1384,7 +1384,7 @@ function buildParamsPreview(p, vanityResult, gasBNB){
     ['保护期', p.protectionBlocks + ' 区块 (~' + (p.protectionBlocks / 28800).toFixed(1) + '天)'],
     ['税费分配', '营销:' + (p.marketingBps/100) + '% 燃烧:' + (p.burnBps/100) + '% 分红:' + (p.dividendBps/100) + '% 流动性:' + (p.liquidityBps/100) + '%'],
     ['资金钱包', p.marketingWallet],
-    ['分红代币', p.dividendToken === ethers.constants.AddressZero ? 'USDT (默认)' : p.dividendToken],
+    ['分红代币', p.dividendToken === ethers.constants.AddressZero ? 'WBNB (默认)' : p.dividendToken],
     ['分红最低持仓', ethers.utils.formatUnits(p.minHoldForDividend, 0) + ' 代币'],
     ['白名单 Mint', p.whitelistMintOnly ? '仅白名单可 Mint' : '公开 Mint（所有人可参加）'],
     ['预售代币比例', p.presaleTokenPct + '% (LP: ' + (100 - p.presaleTokenPct) + '%)'],
