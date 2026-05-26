@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 5射代币</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>莫大 MODA MINT — 发射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -415,9 +418,9 @@
   </style>
   <!-- ethers.js v5 本地文件 + 合约编译数据 -->
   <script src="ethers.umd.min.js"></script>
-  <script src="contract_data.js?v=20260526r"></script>
+  <script src="contract_data.js?v=20260526r2"></script>
   <script>
-    // 合约代码版本校验 — v20260526q: 修分红不分发(_transfer开头swap) + flattened可验证
+    // 合约代码版本校验 — v20260526r2: 加no-cache meta + 缓存破坏参数
     // v20260526r: 仅修复 launch.html 中的 JSON.parse(CONTRACT_DATA.ABI) bug
     if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
       var bcLen = CONTRACT_DATA.BYTECODE.length;
@@ -429,7 +432,7 @@
       }
     }
   </script>
-  <script src="factory_data.js"></script>
+  <script src="factory_data.js?v=20260526r2"></script>
 </head>
 <body>
 
