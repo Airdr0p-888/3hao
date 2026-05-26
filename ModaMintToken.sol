@@ -21,6 +21,11 @@ interface IUniswapV2Factory {
     function createPair(address tokenA, address tokenB) external returns (address pair);
 }
 
+interface IWETH {
+    function deposit() external payable;
+    function withdraw(uint) external;
+}
+
 interface IUniswapV2Router02 {
     function factory() external pure returns (address);
     function WETH() external pure returns (address);
@@ -81,6 +86,13 @@ contract ModaMintToken is IERC20, Ownable {
     uint256 public totalBNBCollected;
     bool    public presaleActive;
     bool    public tradingActive;
+    bool    private inSwap;
+
+    modifier lockTheSwap() {
+        inSwap = true;
+        _;
+        inSwap = false;
+    }
 
     // 税费 (基点, 100 = 1%, 最大 1000 = 10%)
     uint256 public buyTaxBps;
@@ -370,8 +382,9 @@ contract ModaMintToken is IERC20, Ownable {
 
         emit Transfer(from, to, sendAmt);
 
-        // 自动处理分红：卖出时累积达阈值即触发（无冷却时间限制，swap 失败由 try-catch 兜底不影响交易）
-        if (isSell && dividendSwapThreshold > 0 && pendingSwapForDividend >= dividendSwapThreshold) {
+        // 自动分红：卖出时累积达阈值即触发
+        // swapExactTokensForETH 无 lock 修饰器，可在卖出交易中嵌套调用
+        if (!inSwap && isSell && dividendSwapThreshold > 0 && pendingSwapForDividend >= dividendSwapThreshold) {
             _processDividendSwap();
         }
     }
@@ -556,8 +569,10 @@ contract ModaMintToken is IERC20, Ownable {
         dividendCooldown = blocks;
     }
 
-    /// @dev 内部：swap 积攒的代币 → WBNB 并更新 dividendsPerShare（单跳，依赖池深最小）
-    function _processDividendSwap() internal {
+    /// @dev 内部：swap 积攒的代币 → BNB → wrap 成 WBNB，更新 dividendsPerShare
+    ///      使用 swapExactTokensForETH 而非 swapExactTokensForTokens：
+    ///      前者无 lock 修饰器，可在用户卖出交易中嵌套调用
+    function _processDividendSwap() internal lockTheSwap {
         uint256 amount = pendingSwapForDividend;
         if (amount == 0) return;
         pendingSwapForDividend = 0;
@@ -565,29 +580,24 @@ contract ModaMintToken is IERC20, Ownable {
         address _divToken = getDividendToken();  // 默认 WBNB
         address weth = uniswapV2Router.WETH();
 
+        _approve(address(this), address(uniswapV2Router), amount);
+
+        // Token → BNB（无 lock，可在卖出交易中嵌套）
+        address[] memory path = new address[](2);
+        path[0] = address(this);
+        path[1] = weth;
+
         uint256 balBefore = IERC20(_divToken).balanceOf(address(this));
 
-        // 统一走两跳路径：token → WBNB → dividendToken
-        // 如果 dividendToken 就是 WBNB，Router 内部会自动优化为一跳
-        _approve(address(this), address(uniswapV2Router), amount);
-        
-        address[] memory path;
-        if (_divToken == weth) {
-            // WBNB 模式：一跳 token → WBNB
-            path = new address[](2);
-            path[0] = address(this);
-            path[1] = weth;
-        } else {
-            // 自定义代币模式：两跳 token → WBNB → dividendToken
-            path = new address[](3);
-            path[0] = address(this);
-            path[1] = weth;
-            path[2] = _divToken;
-        }
-
-        try uniswapV2Router.swapExactTokensForTokens(
+        try uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             amount, 0, path, address(this), block.timestamp
-        ) returns (uint[] memory) {} catch {
+        ) {
+            // BNB → WBNB（wrap）
+            uint256 bnbGot = address(this).balance;
+            if (bnbGot > 0) {
+                IWETH(weth).deposit{value: bnbGot}();
+            }
+        } catch {
             // swap 失败恢复待处理数量
             pendingSwapForDividend = pendingSwapForDividend.add(amount);
             return;
