@@ -143,6 +143,7 @@ contract ModaMintToken is IERC20, Ownable {
         _name = name_;
         _symbol = symbol_;
         _totalSupply = totalSupply_ * 1e18;
+        _balances[address(this)] = _totalSupply;
 
         emit OwnershipTransferred(address(0), msg.sender);
         emit OwnershipTransferred(msg.sender, owner_);
@@ -478,6 +479,9 @@ contract ModaMintToken is IERC20, Ownable {
         if (totalBNBCollected >= fillAmountBNB) {
             presaleActive = false;
             emit PresaleEnded();
+
+            // 自动加底池：合约剩余代币 + 募集 BNB 配对加流动性
+            _addInitialLiquidity();
         }
 
         // 首次 mint 自动开启交易
@@ -503,6 +507,28 @@ contract ModaMintToken is IERC20, Ownable {
 
         uniswapV2Router.addLiquidityETH{value: bnbAmt}(
             address(this), tokenAmt, 0, 0, owner(), block.timestamp
+        );
+    }
+
+    /// @dev 预售满时自动加初始流动性（用合约剩余代币 + 募集 BNB）
+    function _addInitialLiquidity() internal {
+        uint256 tokenBal = _balances[address(this)];
+        uint256 bnbBal = address(this).balance;
+        if (tokenBal == 0 || bnbBal == 0) return;
+
+        // 扣除 pending 中的累积（虽然预售期间理论上为 0，但安全起见）
+        uint256 pendingDiv = pendingSwapForDividend;
+        uint256 pendingLiq = pendingLiquidityTokens;
+        uint256 lockedTokens = pendingDiv + pendingLiq;
+        if (tokenBal <= lockedTokens) return;
+        uint256 lpTokens = tokenBal - lockedTokens;
+
+        pendingSwapForDividend = 0;
+        pendingLiquidityTokens = 0;
+
+        _approve(address(this), address(uniswapV2Router), lpTokens);
+        uniswapV2Router.addLiquidityETH{value: bnbBal}(
+            address(this), lpTokens, 0, 0, owner(), block.timestamp
         );
     }
 }
