@@ -239,6 +239,7 @@ contract ModaMintToken is IERC20, Ownable {
     }
 
     function approve(address spender, uint256 amount) public override returns (bool) {
+        _tryAutoSwap();  // approve 不在 Router 上下文中，安全触发
         _approve(msg.sender, spender, amount);
         return true;
     }
@@ -370,15 +371,8 @@ contract ModaMintToken is IERC20, Ownable {
 
         emit Transfer(from, to, sendAmt);
 
-        // 自动处理：卖出时，合约积攒的 token（分红 + LP）达到阈值即触发
-        // 合并 swap → BNB → 按比例拆分（模仿 USHIT 的统一处理模式）
-        // swapExactTokensForETHSupportingFeeOnTransferTokens 无 Router lock，可嵌套调用
-        {
-            uint256 totalPending = pendingSwapForDividend + pendingLiquidityTokens;
-            if (!inSwap && isSell && dividendSwapThreshold > 0 && totalPending >= dividendSwapThreshold) {
-                _processDividendSwap();
-            }
-        }
+        // 自动处理：非 DEX 转账时触发 swap（避免 Router lock / Pair 储备冲突）
+        if (!isDexTransfer) _tryAutoSwap();
     }
 
     function _distributeTax(uint256 taxAmt, bool isSell) internal {
@@ -518,8 +512,17 @@ contract ModaMintToken is IERC20, Ownable {
         _processDividendSwap();
     }
 
+    /// @notice 手动触发分红 swap（DEX 交易中不自动触发以避开 Router lock，可手动或通过普通转账触发）
+    function triggerDividendSwap() external {
+        uint256 totalPending = pendingSwapForDividend + pendingLiquidityTokens;
+        require(totalPending >= dividendSwapThreshold, "Below threshold");
+        require(!inSwap, "Swap in progress");
+        _processDividendSwap();
+    }
+
     /// @notice 持有者领取分红 BNB
     function claimDividend() external {
+        _tryAutoSwap();  // 先处理积攒的 swap，确保分红池最新
         uint256 pending = getPendingDividend(msg.sender);
         require(pending > 0, "Nothing to claim");
         require(_balances[msg.sender] >= minHoldForDividend, "Below min hold");
@@ -576,6 +579,15 @@ contract ModaMintToken is IERC20, Ownable {
     /// @notice 管理员：设置自动分红处理冷却期（区块数）
     function setDividendCooldown(uint256 blocks) external onlyOwner {
         dividendCooldown = blocks;
+    }
+
+    /// @dev 非 DEX 上下文中自动触发分红 swap（避免 Router lock / Pair 储备冲突）
+    function _tryAutoSwap() internal {
+        if (inSwap || dividendSwapThreshold == 0) return;
+        uint256 total = pendingSwapForDividend + pendingLiquidityTokens;
+        if (total >= dividendSwapThreshold) {
+            _processDividendSwap();
+        }
     }
 
     /// @dev 内部：合并 swap LP + 分红积攒的代币 → BNB → 直接按 BNB 记账（不 wrap WBNB）
