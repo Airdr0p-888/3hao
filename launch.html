@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 1射代币</title>
+  <title>莫大 MODA MINT — 2射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -415,14 +415,15 @@
   </style>
   <!-- ethers.js v5 本地文件 + 合约编译数据 -->
   <script src="ethers.umd.min.js"></script>
-  <script src="contract_data.js?v=20260526q"></script>
+  <script src="contract_data.js?v=20260526r"></script>
   <script>
     // 合约代码版本校验 — v20260526q: 修分红不分发(_transfer开头swap) + flattened可验证
+    // v20260526r: 仅修复 launch.html 中的 JSON.parse(CONTRACT_DATA.ABI) bug
     if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
       var bcLen = CONTRACT_DATA.BYTECODE.length;
       console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27554 (=0x前缀+27552 hex)');
       if(bcLen === 27554){
-        console.log('[版本检测] ✅ 最新版合约（分红_push模式 + flattened源码可验证）');
+        console.log('[版本检测] ✅ 最新版launch（修复JSON.parse bug）');
       } else {
         console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27554);
       }
@@ -1447,7 +1448,7 @@ async function launchToken(){
     // ===== 阶段2：构建 initCode =====
     statusText.textContent = '🔧 构建合约数据...';
     modalDesc.textContent = '正在编码部署参数...';
-    const tokenFactory = new ethers.ContractFactory(JSON.parse(CONTRACT_DATA.ABI), CONTRACT_DATA.BYTECODE, signer);
+    const tokenFactory = new ethers.ContractFactory(CONTRACT_DATA.ABI, CONTRACT_DATA.BYTECODE, signer);
     const deployTxData = tokenFactory.getDeployTransaction(
       p.name, p.symbol,
       p.totalSupply, p.mintCostBNB, p.fillBNB,
@@ -1936,7 +1937,7 @@ function initAdminPanel(contractAddr) {
   // body.style.padding = '16px';
   // icon.textContent = '▼';
   try {
-    _adminContract = new ethers.Contract(contractAddr, JSON.parse(CONTRACT_DATA.ABI), signer);
+    _adminContract = new ethers.Contract(contractAddr, CONTRACT_DATA.ABI, signer);
     adminRefreshStatus();
     adminLog('✅ 已连接合约: ' + contractAddr.slice(0,8) + '...');
   } catch(e) {
