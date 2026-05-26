@@ -107,16 +107,11 @@ contract ModaMintToken is IERC20, Ownable {
     address public marketingWallet;
     address public dividendToken;
 
-    // 反机器人
-    uint256 public protectionEndBlock;
-
     // DEX
     IUniswapV2Router02 public immutable uniswapV2Router;
     address public immutable uniswapV2Pair;
 
     mapping(address => bool) public isExcludedFromTax;
-    mapping(address => bool) public isExcludedFromProtection;
-    mapping(address => uint256) private _lastTxBlock;
 
     // ===== Mint 白名单（仅限制 mint 权限，无其他特权） =====
     bool    public whitelistMintOnly;                          // true = 仅白名单可 mint
@@ -157,7 +152,6 @@ contract ModaMintToken is IERC20, Ownable {
         uint256 fillBNB_,
         uint256 buyTax_,
         uint256 sellTax_,
-        uint256 protectionBlocks_,
         uint256 marketingPct_,
         uint256 burnPct_,
         uint256 dividendPct_,
@@ -203,7 +197,6 @@ contract ModaMintToken is IERC20, Ownable {
 
         buyTaxBps = buyTax_;
         sellTaxBps = sellTax_;
-        protectionEndBlock = block.number; // 保护期 0 个区块，mint 打满后立即可交易
         marketingBps = marketingPct_;
         burnBps = burnPct_;
         dividendBps = dividendPct_;
@@ -225,9 +218,6 @@ contract ModaMintToken is IERC20, Ownable {
         isExcludedFromTax[owner_] = true;
         isExcludedFromTax[marketingWallet_] = true;
         isExcludedFromTax[address(_router)] = true;
-        isExcludedFromProtection[address(_router)] = true;
-        isExcludedFromProtection[address(this)] = true;
-        isExcludedFromProtection[owner_] = true;
 
         emit Transfer(address(0), address(this), _totalSupply);
     }
@@ -347,14 +337,11 @@ contract ModaMintToken is IERC20, Ownable {
             );
         }
 
-        // 合约自身转出代币（税费分配、addLiquidity 等）跳过反机器人保护
-        if (from != address(this)) {
-            if (!isExcludedFromProtection[from] && !isExcludedFromProtection[to]) {
-                require(block.number > protectionEndBlock, "Anti-bot active");
-                require(_lastTxBlock[from] != block.number, "Same block");
-            }
+        // ✅ 自动派发分红：转账前先结算双方待领取的分红代币（push 模式，模仿 USHIT）
+        if (dividendBps > 0) {
+            _autoClaimDividend(from);
+            _autoClaimDividend(to);
         }
-        _lastTxBlock[from] = block.number;
 
         // 分红修正值更新：确保转账不影响双方未领取的分红
         if (dividendBps > 0 && dividendsPerShare > 0) {
@@ -427,7 +414,6 @@ contract ModaMintToken is IERC20, Ownable {
     function setSellTax(uint256 bps) external onlyOwner { require(bps <= MAX_TAX); sellTaxBps = bps; }
     function setMarketingWallet(address w) external onlyOwner { require(w != address(0)); marketingWallet = w; }
     function excludeFromTax(address a, bool ex) external onlyOwner { isExcludedFromTax[a] = ex; }
-    function excludeFromProtection(address a, bool ex) external onlyOwner { isExcludedFromProtection[a] = ex; }
     function withdrawBNB() external onlyOwner { payable(owner()).transfer(address(this).balance); }
 
     /// @notice 紧急提取合约中的任意 ERC20 代币（防止分红 WBNB 等资产滞留）
@@ -471,11 +457,6 @@ contract ModaMintToken is IERC20, Ownable {
     function setWhitelistMintOnly(bool active) external onlyOwner {
         whitelistMintOnly = active;
         emit WhitelistMintToggled(active);
-    }
-
-    /// @notice 立即关闭反机器人保护，或设置新的保护结束区块
-    function setProtectionEndBlock(uint256 blockNumber) external onlyOwner {
-        protectionEndBlock = blockNumber;
     }
 
     /// @notice 手动开关交易（比 enableTrading 更灵活，可开可关）
@@ -561,6 +542,31 @@ contract ModaMintToken is IERC20, Ownable {
                      + magnifiedDividendCorrections[account];
         if (mag <= 0) return 0;
         return uint256(mag) / DIVIDEND_PRECISION;
+    }
+
+    /// @dev 内部：自动结算并发送待领取分红代币给指定地址（push 模式，模仿 USHIT）
+    ///       转账时自动调用，持有者无需手动 claimDividend
+    function _autoClaimDividend(address account) internal {
+        if (dividendBps == 0 || dividendsPerShare == 0) return;
+        if (account == uniswapV2Pair || account == address(this) || account == address(0)) return;
+        if (_balances[account] < minHoldForDividend) return;
+
+        int256 mag = int256(_balances[account]) * int256(dividendsPerShare)
+                     + magnifiedDividendCorrections[account];
+        if (mag <= 0) return;
+
+        uint256 pending = uint256(mag) / DIVIDEND_PRECISION;
+        if (pending == 0) return;
+        if (pending > _availableDivFunds) return;
+
+        _availableDivFunds = _availableDivFunds.sub(pending);
+
+        // 重置修正值：使 claim 后 pending = 0
+        magnifiedDividendCorrections[account] = -int256(_balances[account]) * int256(dividendsPerShare);
+
+        address _divToken = getDividendToken();
+        IERC20(_divToken).transfer(account, pending);
+        emit DividendClaimed(account, _divToken, pending);
     }
 
     /// @notice 管理员：设置最低持仓门槛
