@@ -1209,21 +1209,16 @@ function updateAlloc(el, key){
     var elPct=document.getElementById(k+'-pct');
     v[k]=(k===key)?(parseInt(el.value)||0):(parseInt(elPct.textContent)||0);
   }
-  // 2. 计算其他三项之和，限制当前项
+  // 2. 计算其他三项之和，限制当前项（只动当前这个！）
   var otherSum=0;
   for(var i=0;i<4;i++){ if(_allocKeys[i]!==key) otherSum+=v[_allocKeys[i]]; }
   var limit=Math.max(0,100-otherSum);
   if(v[key]>limit){ v[key]=limit; el.value=limit; }
-  // 3. 更新显示
-  for(var i=0;i<4;i++){
-    var k=_allocKeys[i];
-    document.getElementById(k+'-pct').textContent=v[k]+'%';
-    document.getElementById(k+'-bar').style.width=v[k]+'%';
-    var sl=document.getElementById(_allocSliderMap[k]);
-    if(sl&&k!==key) sl.style.setProperty('--pct',v[k]+'%');
-  }
+  // 3. 更新当前滑块显示
+  document.getElementById(key+'-pct').textContent=v[key]+'%';
+  document.getElementById(key+'-bar').style.width=v[key]+'%';
   el.style.setProperty('--pct',v[key]+'%');
-  // 4. 合计
+  // 4. 合计 + 提示
   var total=v.fund+v.burn+v.div+v.liq;
   var remain=100-total;
   document.getElementById('alloc-total').textContent=total+'%';
@@ -1232,17 +1227,6 @@ function updateAlloc(el, key){
   if(remain>0){ rEl.textContent='\u672a\u5206\u914d: '+remain+'%'; rEl.style.color='var(--text-muted)'; tEl.className='alloc-total-val'; }
   else if(remain===0){ rEl.textContent='\u2705 \u521a\u597d 100%'; rEl.style.color='#22c55e'; tEl.className='alloc-total-val ok'; }
   else{ rEl.textContent='\u26a0\ufe0f \u8d85\u51fa '+(-remain)+'%'; rEl.style.color='#ef4444'; tEl.className='alloc-total-val error'; }
-  // 5. 动态限制每个slider的max
-  for(var i=0;i<4;i++){
-    var k=_allocKeys[i];
-    var sl=document.getElementById(_allocSliderMap[k]);
-    if(!sl) continue;
-    var oS=0; for(var j=0;j<4;j++){ if(_allocKeys[j]!==k) oS+=v[_allocKeys[j]]; }
-    var mX=Math.max(0,100-oS);
-    sl.max=mX;
-    if(mX<=0&&v[k]<=0&&k!==key){ sl.disabled=true; sl.style.opacity='0.35'; sl.title='\u5176\u4ed6\u4e09\u9879\u5df2\u8fbe100%\uff0c\u65e0\u6cd5\u5206\u914d'; }
-    else { sl.disabled=false; sl.style.opacity='1'; sl.title=''; }
-  }
 }
 
 /* ─── 表单验证 ─── */
