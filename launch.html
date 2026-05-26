@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 1射代币</title>
+  <title>莫大 MODA MINT — 2射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -418,13 +418,10 @@
   <script src="contract_data.js?v=20260525h"></script>
   <script>
     // 合约代码版本校验 — 检查 bytecode 长度确保是最新编译版本
-    if(typeof CONTRACT_BYTECODE === 'string'){
-      // 新版 via-ir 编译的 bytecode 长度约为 18128 字符（含 0x 前缀）
-      // 旧版 bytecode 长度不同
-      var bcLen = CONTRACT_BYTECODE.length;
-      console.log('[版本检测] CONTRACT_BYTECODE 长度:', bcLen);
-      // 检查是否包含新版标志字符串（可能被编译器优化，不保证存在）
-      var bcLower = CONTRACT_BYTECODE.toLowerCase().replace('0x','');
+    if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
+      var bcLen = CONTRACT_DATA.BYTECODE.length;
+      console.log('[版本检测] BYTECODE 长度:', bcLen);
+      var bcLower = CONTRACT_DATA.BYTECODE.toLowerCase().replace('0x','');
       // 新版包含 "Wallet zero" 和 "Mint cost"
       var hasWalletZero = bcLower.indexOf('57616c6c6574207a65726f') !== -1;
       var hasMintCost = bcLower.indexOf('4d696e7420636f7374') !== -1;
@@ -1455,7 +1452,7 @@ async function launchToken(){
     // ===== 阶段2：构建 initCode =====
     statusText.textContent = '🔧 构建合约数据...';
     modalDesc.textContent = '正在编码部署参数...';
-    const tokenFactory = new ethers.ContractFactory(CONTRACT_ABI, CONTRACT_BYTECODE, signer);
+    const tokenFactory = new ethers.ContractFactory(JSON.parse(CONTRACT_DATA.ABI), CONTRACT_DATA.BYTECODE, signer);
     const deployTxData = tokenFactory.getDeployTransaction(
       p.name, p.symbol,
       p.totalSupply, p.mintCostBNB, p.fillBNB,
@@ -1469,7 +1466,7 @@ async function launchToken(){
     );
     const initCode = deployTxData.data;
     // 提取构造函数参数 = initCode - bytecode（去掉前面的 bytecode 部分就是构造函数参数编码）
-    const bytecodeOnly = CONTRACT_BYTECODE; // 以 0x 开头
+    const bytecodeOnly = CONTRACT_DATA.BYTECODE; // 以 0x 开头
     const ctorArgsHex = '0x' + initCode.slice(bytecodeOnly.length);
     console.log('构造函数参数 (验证用，完整):', ctorArgsHex);
     console.log('构造函数参数 (不含0x前缀):', ctorArgsHex.slice(2));
@@ -1944,7 +1941,7 @@ function initAdminPanel(contractAddr) {
   // body.style.padding = '16px';
   // icon.textContent = '▼';
   try {
-    _adminContract = new ethers.Contract(contractAddr, CONTRACT_ABI, signer);
+    _adminContract = new ethers.Contract(contractAddr, JSON.parse(CONTRACT_DATA.ABI), signer);
     adminRefreshStatus();
     adminLog('✅ 已连接合约: ' + contractAddr.slice(0,8) + '...');
   } catch(e) {
