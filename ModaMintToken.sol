@@ -370,12 +370,9 @@ contract ModaMintToken is IERC20, Ownable {
 
         emit Transfer(from, to, sendAmt);
 
-        // 自动处理分红：买卖转账均可触发（swap 失败由 try-catch 兜底，不影响交易）
-        if (dividendSwapThreshold > 0 && pendingSwapForDividend >= dividendSwapThreshold) {
-            if (block.number >= lastDividendBlock + dividendCooldown) {
-                _processDividendSwap();
-                lastDividendBlock = block.number;
-            }
+        // 自动处理分红：卖出时累积达阈值即触发（无冷却时间限制，swap 失败由 try-catch 兜底不影响交易）
+        if (isSell && dividendSwapThreshold > 0 && pendingSwapForDividend >= dividendSwapThreshold) {
+            _processDividendSwap();
         }
     }
 
@@ -419,6 +416,30 @@ contract ModaMintToken is IERC20, Ownable {
     /// @notice 紧急提取合约中的任意 ERC20 代币（防止分红 USDT 等资产滞留）
     function emergencyWithdrawToken(address token, uint256 amount) external onlyOwner {
         IERC20(token).transfer(owner(), amount);
+    }
+
+    /// @notice 设置营销比例（需保证四项分配总和 ≤ 10000 bps）
+    function setMarketingBps(uint256 bps) external onlyOwner {
+        require(bps + burnBps + dividendBps + liquidityBps <= 10000, "Total > 100%");
+        marketingBps = bps;
+    }
+
+    /// @notice 设置燃烧比例
+    function setBurnBps(uint256 bps) external onlyOwner {
+        require(marketingBps + bps + dividendBps + liquidityBps <= 10000, "Total > 100%");
+        burnBps = bps;
+    }
+
+    /// @notice 设置分红比例
+    function setDividendBps(uint256 bps) external onlyOwner {
+        require(marketingBps + burnBps + bps + liquidityBps <= 10000, "Total > 100%");
+        dividendBps = bps;
+    }
+
+    /// @notice 设置流动性比例
+    function setLiquidityBps(uint256 bps) external onlyOwner {
+        require(marketingBps + burnBps + dividendBps + bps <= 10000, "Total > 100%");
+        liquidityBps = bps;
     }
 
     /// @notice 批量设置 Mint 白名单（仅影响 mint 权限，无其他特权）

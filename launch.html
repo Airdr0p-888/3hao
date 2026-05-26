@@ -874,10 +874,48 @@
             <input id="admin-buy-tax" type="number" min="0" max="2500" placeholder="500" style="width:90px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:5px 10px;color:var(--text-body);font-size:.82rem"/>
             <button onclick="adminSetBuyTax()" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;box-shadow:0 2px 8px rgba(37,99,235,.35)">设置买入税</button>
           </div>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
             <span style="font-size:.8rem;color:var(--text-muted)">卖出税 (bps):</span>
             <input id="admin-sell-tax" type="number" min="0" max="2500" placeholder="500" style="width:90px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:5px 10px;color:var(--text-body);font-size:.82rem"/>
             <button onclick="adminSetSellTax()" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;box-shadow:0 2px 8px rgba(37,99,235,.35)">设置卖出税</button>
+          </div>
+          <!-- 税费分配比例滑块（四项总和 ≤ 100%） -->
+          <div style="font-size:.78rem;color:#fbbf24;margin-bottom:6px;font-weight:600">📊 税费分配比例（拖动调整，四项合计 ≤ 100%）</div>
+          <div id="admin-alloc-sliders" style="background:rgba(0,0,0,.2);border-radius:8px;padding:12px;margin-bottom:4px">
+            <!-- 营销 -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:.78rem;color:var(--text-muted);min-width:50px">📢 营销</span>
+              <input id="admin-mkt-bps" type="range" min="0" max="10000" value="0" style="flex:1;accent-color:#f59e0b" oninput="adminAllocUpdate('mkt')"/>
+              <span id="admin-mkt-pct" style="font-size:.78rem;color:#f59e0b;min-width:48px;text-align:right;font-weight:700">0%</span>
+            </div>
+            <!-- 销毁 -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:.78rem;color:var(--text-muted);min-width:50px">🔥 销毁</span>
+              <input id="admin-burn-bps" type="range" min="0" max="10000" value="0" style="flex:1;accent-color:#ef4444" oninput="adminAllocUpdate('burn')"/>
+              <span id="admin-burn-pct" style="font-size:.78rem;color:#ef4444;min-width:48px;text-align:right;font-weight:700">0%</span>
+            </div>
+            <!-- 分红 -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:.78rem;color:var(--text-muted);min-width:50px">💰 分红</span>
+              <input id="admin-div-bps" type="range" min="0" max="10000" value="0" style="flex:1;accent-color:#22c55e" oninput="adminAllocUpdate('div')"/>
+              <span id="admin-div-pct" style="font-size:.78rem;color:#22c55e;min-width:48px;text-align:right;font-weight:700">0%</span>
+            </div>
+            <!-- 流动性 -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <span style="font-size:.78rem;color:var(--text-muted);min-width:50px">💧 流动性</span>
+              <input id="admin-liq-bps" type="range" min="0" max="10000" value="0" style="flex:1;accent-color:#3b82f6" oninput="adminAllocUpdate('liq')"/>
+              <span id="admin-liq-pct" style="font-size:.78rem;color:#3b82f6;min-width:48px;text-align:right;font-weight:700">0%</span>
+            </div>
+            <div id="admin-alloc-total-bar" style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;margin-top:6px;overflow:hidden">
+              <div id="admin-alloc-total-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#22c55e 0%,#f59e0b 80%,#ef4444 100%);transition:width .2s"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:4px">
+              <span id="admin-alloc-sum" style="font-size:.76rem;color:var(--text-muted)">合计: 0%</span>
+              <span id="admin-alloc-remain" style="font-size:.76rem;color:#22c55e">剩余: 100%</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="adminSaveAlloc()" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border:none;padding:7px 20px;border-radius:6px;cursor:pointer;font-size:.8rem;font-weight:600;flex:1">💾 保存分配比例</button>
           </div>
         </div>
         <hr style="border:none;border-top:1px solid rgba(255,255,255,.08);margin:12px 0"/>
@@ -2012,7 +2050,8 @@ async function adminRefreshStatus() {
       tokensPerMint, bnbBalance,
       owner, whitelistMintOnly,
       dividendSwapThreshold, pendingSwapForDividend,
-      pendingLiquidityTokens
+      pendingLiquidityTokens,
+      marketingBps, burnBps, dividendBps, liquidityBps
     ] = await Promise.all([
       _adminContract.presaleActive(),
       _adminContract.tradingActive(),
@@ -2025,7 +2064,11 @@ async function adminRefreshStatus() {
       _adminContract.whitelistMintOnly(),
       _adminContract.dividendSwapThreshold(),
       _adminContract.pendingSwapForDividend(),
-      _adminContract.pendingLiquidityTokens()
+      _adminContract.pendingLiquidityTokens(),
+      _adminContract.marketingBps(),
+      _adminContract.burnBps(),
+      _adminContract.dividendBps(),
+      _adminContract.liquidityBps()
     ]);
     const fmt = v => parseFloat(ethers.utils.formatEther(v)).toFixed(4);
     const fmtTok = v => parseFloat(ethers.utils.formatUnits(v, 18)).toLocaleString();
@@ -2044,7 +2087,13 @@ async function adminRefreshStatus() {
       '<br/><b>Mint 白名单模式:</b> ' + (whitelistMintOnly ? '<span style="color:#fbbf24">🔒 仅白名单可 Mint</span>' : '<span style="color:#4ade80">🔓 公开 Mint</span>') +
       '<br/><b>分红阈值:</b> ' + fmtTok(dividendSwapThreshold) + ' 代币' +
       '<br/><b>待处理分红:</b> ' + fmtTok(pendingSwapForDividend) + ' 代币' +
-      '<br/><b>待处理流动性:</b> ' + fmtTok(pendingLiquidityTokens) + ' 代币';
+      '<br/><b>待处理流动性:</b> ' + fmtTok(pendingLiquidityTokens) + ' 代币' +
+      '<br/><b>分配比例:</b> <span style="color:#f59e0b">📢'+(marketingBps/100)+'%</span> <span style="color:#ef4444">🔥'+(burnBps/100)+'%</span> <span style="color:#22c55e">💰'+(dividendBps/100)+'%</span> <span style="color:#3b82f6">💧'+(liquidityBps/100)+'%</span>';
+
+    // 加载分配滑块
+    if (typeof adminLoadAllocSliders === 'function') {
+      adminLoadAllocSliders(marketingBps, burnBps, dividendBps, liquidityBps);
+    }
 
     // 更新分红信息显示
     const divInfo = document.getElementById('admin-div-info');
@@ -2137,6 +2186,95 @@ async function adminSetSellTax() {
   } catch(e) {
     adminLog('❌ 错误: ' + (e.reason || e.message || e.code), true);
   }
+}
+
+/* ===== 税费分配比例滑块 ===== */
+
+// 当前链上实际的 Bps 值（从 adminRefreshStatus 读取后缓存）
+let _adminAllocCache = { marketingBps: 0, burnBps: 0, dividendBps: 0, liquidityBps: 0 };
+
+function adminAllocUpdate(changedKey) {
+  const mkt = parseInt(document.getElementById('admin-mkt-bps').value) || 0;
+  const burn = parseInt(document.getElementById('admin-burn-bps').value) || 0;
+  const div = parseInt(document.getElementById('admin-div-bps').value) || 0;
+  const liq = parseInt(document.getElementById('admin-liq-bps').value) || 0;
+
+  document.getElementById('admin-mkt-pct').textContent = (mkt / 100).toFixed(0) + '%';
+  document.getElementById('admin-burn-pct').textContent = (burn / 100).toFixed(0) + '%';
+  document.getElementById('admin-div-pct').textContent = (div / 100).toFixed(0) + '%';
+  document.getElementById('admin-liq-pct').textContent = (liq / 100).toFixed(0) + '%';
+
+  const total = mkt + burn + div + liq;
+  const totalPct = (total / 100).toFixed(0);
+  document.getElementById('admin-alloc-sum').textContent = '合计: ' + totalPct + '%';
+  document.getElementById('admin-alloc-total-fill').style.width = Math.min(totalPct, 100) + '%';
+
+  const remain = 10000 - total;
+  const remainEl = document.getElementById('admin-alloc-remain');
+  if (remain >= 0) {
+    remainEl.textContent = '剩余: ' + (remain / 100).toFixed(0) + '%';
+    remainEl.style.color = '#22c55e';
+    document.getElementById('admin-alloc-total-fill').style.background = 'linear-gradient(90deg,#22c55e 0%,#f59e0b 80%,#ef4444 100%)';
+  } else {
+    remainEl.textContent = '超出: ' + ((-remain) / 100).toFixed(0) + '% ⚠️';
+    remainEl.style.color = '#ef4444';
+    document.getElementById('admin-alloc-total-fill').style.background = '#ef4444';
+  }
+}
+
+async function adminSaveAlloc() {
+  if (!_adminContract) { adminLog('⚠️ 合约未初始化', true); return; }
+  const mkt = parseInt(document.getElementById('admin-mkt-bps').value) || 0;
+  const burn = parseInt(document.getElementById('admin-burn-bps').value) || 0;
+  const div = parseInt(document.getElementById('admin-div-bps').value) || 0;
+  const liq = parseInt(document.getElementById('admin-liq-bps').value) || 0;
+
+  if (mkt + burn + div + liq > 10000) {
+    adminLog('❌ 四项合计超过 100%（' + ((mkt+burn+div+liq)/100).toFixed(0) + '%），请先调整滑块', true);
+    return;
+  }
+
+  if (!confirm('确认保存分配比例？\\n📢 营销: '+(mkt/100)+'% 🔥 销毁: '+(burn/100)+'% 💰 分红: '+(div/100)+'% 💧 流动性: '+(liq/100)+'%')) return;
+
+  try {
+    // 只实际改变了才调用合约（节省 gas）
+    if (mkt !== _adminAllocCache.marketingBps) {
+      adminLog('⏳ 设置营销比例: ' + (mkt/100) + '%...');
+      await _adminContract.setMarketingBps(mkt); await _adminContract.deployTransaction; // wait for previous tx
+      // actually we need to wait properly
+    }
+    // 用更安全的方式：逐个调用并等待
+    const calls = [];
+    if (mkt !== _adminAllocCache.marketingBps) calls.push(['setMarketingBps', mkt]);
+    if (burn !== _adminAllocCache.burnBps) calls.push(['setBurnBps', burn]);
+    if (div !== _adminAllocCache.dividendBps) calls.push(['setDividendBps', div]);
+    if (liq !== _adminAllocCache.liquidityBps) calls.push(['setLiquidityBps', liq]);
+
+    if (calls.length === 0) { adminLog('ℹ️ 没有变化，无需保存'); return; }
+
+    for (const [fn, val] of calls) {
+      adminLog('⏳ 设置 ' + fn + ': ' + (val/100) + '%...');
+      const tx = await _adminContract[fn](val);
+      await tx.wait();
+      adminLog('✅ ' + fn + ' → ' + (val/100) + '%');
+    }
+
+    _adminAllocCache = { marketingBps: mkt, burnBps: burn, dividendBps: div, liquidityBps: liq };
+    adminLog('✅ 分配比例已保存！');
+    await adminRefreshStatus();
+  } catch(e) {
+    adminLog('❌ 错误: ' + (e.reason || e.message || e.code), true);
+  }
+}
+
+// 从链上加载分配比例到滑块
+function adminLoadAllocSliders(mkt, burn, div, liq) {
+  document.getElementById('admin-mkt-bps').value = mkt;
+  document.getElementById('admin-burn-bps').value = burn;
+  document.getElementById('admin-div-bps').value = div;
+  document.getElementById('admin-liq-bps').value = liq;
+  _adminAllocCache = { marketingBps: mkt, burnBps: burn, dividendBps: div, liquidityBps: liq };
+  adminAllocUpdate('init');
 }
 
 /* ===== 分红设置 ===== */
