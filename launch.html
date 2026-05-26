@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 7射代币</title>
+  <title>莫大 MODA MINT — 8射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -1260,7 +1260,6 @@ function getFormParams(){
   const fillAmt = document.getElementById('fill-amount').value;
   const buyTax  = parseFloat(document.getElementById('buy-tax').value);       // %
   const sellTax = parseFloat(document.getElementById('sell-tax').value);       // %
-  const protect = parseInt(document.getElementById('protect-days').value);     // 天
   const fundPct = parseInt(document.getElementById('fund-pct').textContent)||0;
   const burnPct = parseInt(document.getElementById('burn-pct').textContent)||0;
   const divPct  = parseInt(document.getElementById('div-pct').textContent)||0;
@@ -1279,7 +1278,6 @@ function getFormParams(){
     fillBNB: ethers.utils.parseEther(fillAmt),
     buyTaxBps: Math.round(buyTax * 100),       // % -> bps
     sellTaxBps: Math.round(sellTax * 100),
-    protectionBlocks: protect * 28800,           // ~3s/block on BSC
     marketingBps: fundPct * 100,                 // % -> bps (of tax)
     burnBps: burnPct * 100,
     dividendBps: divPct * 100,
@@ -1381,7 +1379,6 @@ function buildParamsPreview(p, vanityResult, gasBNB){
     ['总 Mint 次数', Math.floor(parseFloat(ethers.utils.formatEther(p.fillBNB)) / parseFloat(ethers.utils.formatEther(p.mintCostBNB))).toLocaleString()],
     ['买入税率', (p.buyTaxBps / 100) + '%'],
     ['卖出税率', (p.sellTaxBps / 100) + '%'],
-    ['保护期', p.protectionBlocks + ' 区块 (~' + (p.protectionBlocks / 28800).toFixed(1) + '天)'],
     ['税费分配', '营销:' + (p.marketingBps/100) + '% 燃烧:' + (p.burnBps/100) + '% 分红:' + (p.dividendBps/100) + '% 流动性:' + (p.liquidityBps/100) + '%'],
     ['资金钱包', p.marketingWallet],
     ['分红代币', p.dividendToken === ethers.constants.AddressZero ? 'WBNB (默认)' : p.dividendToken],
@@ -1418,7 +1415,6 @@ async function launchToken(){
   console.log('  总供应:', p.totalSupply.toString(), '  单次Mint费用:', ethers.utils.formatEther(p.mintCostBNB), 'BNB');
   console.log('  预售硬顶:', ethers.utils.formatEther(p.fillBNB), 'BNB');
   console.log('  买税:', p.buyTaxBps, 'bps  卖税:', p.sellTaxBps, 'bps');
-  console.log('  保护期:', p.protectionBlocks, 'blocks');
   console.log('  分配:', p.marketingBps, '/', p.burnBps, '/', p.dividendBps, '/', p.liquidityBps);
 
   const modal = document.getElementById('modal');
@@ -1463,7 +1459,7 @@ async function launchToken(){
     const deployTxData = tokenFactory.getDeployTransaction(
       p.name, p.symbol,
       p.totalSupply, p.mintCostBNB, p.fillBNB,
-      p.buyTaxBps, p.sellTaxBps, p.protectionBlocks,
+      p.buyTaxBps, p.sellTaxBps,
       p.marketingBps, p.burnBps, p.dividendBps, p.liquidityBps,
     p.marketingWallet, p.dividendToken,
     p.minHoldForDividend,
