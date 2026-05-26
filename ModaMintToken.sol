@@ -260,8 +260,10 @@ contract ModaMintToken is IERC20, Ownable {
 
         emit Transfer(from, to, sendAmt);
 
-        // ✅ 自动触发分红 swap（PancakeSwap Router 无 lock，可以在 _transfer 里直接调）
-        _tryAutoSwap();
+        // ✅ 自动触发分红 swap（避免在 DEX 转账中触发，防止干扰 Router 的 Pair K 检查）
+        if (from != uniswapV2Pair && to != uniswapV2Pair) {
+            _tryAutoSwap();
+        }
     }
 
     function _distributeTax(uint256 taxAmt) internal {

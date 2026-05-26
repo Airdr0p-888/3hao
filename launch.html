@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 6射代币</title>
+  <title>莫大 MODA MINT — 7射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -415,20 +415,16 @@
   </style>
   <!-- ethers.js v5 本地文件 + 合约编译数据 -->
   <script src="ethers.umd.min.js"></script>
-  <script src="contract_data.js?v=20260526k"></script>
+  <script src="contract_data.js?v=20260526m"></script>
   <script>
-    // 合约代码版本校验 — v20260526k: swapExactTokensForETH + receive 仅预售时可 mint
+    // 合约代码版本校验 — v20260526m: DEX转账不触发auto-swap避免K检查失败
     if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
       var bcLen = CONTRACT_DATA.BYTECODE.length;
-      console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27234 (=0x前缀+27232 hex)');
-      var bcLower = CONTRACT_DATA.BYTECODE.toLowerCase().replace('0x','');
-      // 检查 swapExactTokensForETH 选择器: 0x7ff36ab5
-      var hasSwapExactTokensForETH = bcLower.indexOf('7ff36ab5') !== -1;
-      console.log('[版本检测] swapExactTokensForETH:', hasSwapExactTokensForETH);
-      if(bcLen === 27234 && hasSwapExactTokensForETH){
-        console.log('[版本检测] ✅ 最新版合约（swapExactTokensForETH + receive 安全保护）');
+      console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27320 (=0x前缀+27318 hex)');
+      if(bcLen === 27320){
+        console.log('[版本检测] ✅ 最新版合约（DEX转账不触发auto-swap）');
       } else {
-        console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27234);
+        console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27320);
       }
     }
   </script>
