@@ -1197,86 +1197,52 @@ function updateMintCalc(){
   elTokens.textContent = tokensPerMint < 1 ? tokensPerMint.toFixed(6) : Math.floor(tokensPerMint).toLocaleString();
   elPrice.textContent = pricePerToken < 0.000001 ? pricePerToken.toExponential(2) + ' BNB' : pricePerToken.toFixed(8) + ' BNB';
 }
-// 四个分配滑块的 key
-const allocKeys = ['fund','burn','div','liq'];
+// 四个分配滑块
+var _allocKeys = ['fund','burn','div','liq'];
+var _allocSliderMap = {fund:'fund-slider', burn:'burn-slider', div:'div-slider', liq:'liq-slider'};
 
 function updateAlloc(el, key){
-  // 滑块 ID 映射
-  const sliderMap = { fund:'fund-slider', burn:'burn-slider', div:'div-slider', liq:'liq-slider' };
-  // 读取四个滑块当前值
-  const vals = {};
-  let changedVal = parseInt(el.value) || 0;
-  allocKeys.forEach(k => {
-    const s = document.getElementById(k+'-pct');
-    vals[k] = (k === key) ? changedVal : (parseInt(s.textContent) || 0);
-  });
-
-  // 计算其他三项总和，限制当前项最大值
-  let othersTotal = 0;
-  allocKeys.forEach(k => { if(k !== key) othersTotal += vals[k]; });
-  const maxAllowed = Math.max(0, 100 - othersTotal);
-
-  // 如果超出，强制回弹
-  if (changedVal > maxAllowed) {
-    changedVal = maxAllowed;
-    el.value = changedVal;
-    vals[key] = changedVal;
+  // 1. 读取4个当前显示值
+  var v = {fund:0,burn:0,div:0,liq:0};
+  for (var i=0;i<4;i++){
+    var k=_allocKeys[i];
+    var elPct=document.getElementById(k+'-pct');
+    v[k]=(k===key)?(parseInt(el.value)||0):(parseInt(elPct.textContent)||0);
   }
-
-  // 更新显示
-  allocKeys.forEach(k => {
-    const pctEl = document.getElementById(k + '-pct');
-    const barEl = document.getElementById(k + '-bar');
-    pctEl.textContent = vals[k] + '%';
-    barEl.style.width = vals[k] + '%';
-    if (k !== key) {
-      const s = document.getElementById(sliderMap[k]);
-      if (s) s.style.setProperty('--pct', vals[k] + '%');
-    }
-    el.style.setProperty('--pct', changedVal + '%');
-  });
-
-  // 合计
-  const total = vals.fund + vals.burn + vals.div + vals.liq;
-  const remain = 100 - total;
-
-  const totalEl = document.getElementById('alloc-total');
-  const remainEl = document.getElementById('alloc-remain');
-  totalEl.textContent = total + '%';
-
-  if (remain > 0) {
-    remainEl.textContent = '未分配: ' + remain + '%';
-    remainEl.style.color = 'var(--text-muted)';
-    totalEl.className = 'alloc-total-val';
-  } else if (remain === 0) {
-    remainEl.textContent = '✅ 刚好 100%';
-    remainEl.style.color = '#22c55e';
-    totalEl.className = 'alloc-total-val ok';
-  } else {
-    remainEl.textContent = '⚠️ 超出 ' + (-remain) + '%';
-    remainEl.style.color = '#ef4444';
-    totalEl.className = 'alloc-total-val error';
+  // 2. 计算其他三项之和，限制当前项
+  var otherSum=0;
+  for(var i=0;i<4;i++){ if(_allocKeys[i]!==key) otherSum+=v[_allocKeys[i]]; }
+  var limit=Math.max(0,100-otherSum);
+  if(v[key]>limit){ v[key]=limit; el.value=limit; }
+  // 3. 更新显示
+  for(var i=0;i<4;i++){
+    var k=_allocKeys[i];
+    document.getElementById(k+'-pct').textContent=v[k]+'%';
+    document.getElementById(k+'-bar').style.width=v[k]+'%';
+    var sl=document.getElementById(_allocSliderMap[k]);
+    if(sl&&k!==key) sl.style.setProperty('--pct',v[k]+'%');
   }
-
-  // 🔑 核心：动态限制每个滑块的 max 值
-  allocKeys.forEach(k => {
-    const slider = document.getElementById(sliderMap[k]);
-    if (!slider) return;
-    const othersForThis = Object.keys(vals).filter(x=>x!==k).reduce((s,x)=>s+vals[x], 0);
-    const thisMax = Math.max(0, 100 - othersForThis);
-    slider.max = thisMax;
-
-    // 没有剩余空间且当前值为0 → 锁死变灰
-    if (thisMax === 0 && vals[k] === 0 && k !== key) {
-      slider.disabled = true;
-      slider.style.opacity = '0.3';
-      slider.title = '其他三项已达 100%，无法再分配';
-    } else {
-      slider.disabled = false;
-      slider.style.opacity = '1';
-      slider.title = '';
-    }
-  });
+  el.style.setProperty('--pct',v[key]+'%');
+  // 4. 合计
+  var total=v.fund+v.burn+v.div+v.liq;
+  var remain=100-total;
+  document.getElementById('alloc-total').textContent=total+'%';
+  var rEl=document.getElementById('alloc-remain');
+  var tEl=document.getElementById('alloc-total');
+  if(remain>0){ rEl.textContent='\u672a\u5206\u914d: '+remain+'%'; rEl.style.color='var(--text-muted)'; tEl.className='alloc-total-val'; }
+  else if(remain===0){ rEl.textContent='\u2705 \u521a\u597d 100%'; rEl.style.color='#22c55e'; tEl.className='alloc-total-val ok'; }
+  else{ rEl.textContent='\u26a0\ufe0f \u8d85\u51fa '+(-remain)+'%'; rEl.style.color='#ef4444'; tEl.className='alloc-total-val error'; }
+  // 5. 动态限制每个slider的max
+  for(var i=0;i<4;i++){
+    var k=_allocKeys[i];
+    var sl=document.getElementById(_allocSliderMap[k]);
+    if(!sl) continue;
+    var oS=0; for(var j=0;j<4;j++){ if(_allocKeys[j]!==k) oS+=v[_allocKeys[j]]; }
+    var mX=Math.max(0,100-oS);
+    sl.max=mX;
+    if(mX<=0&&v[k]<=0&&k!==key){ sl.disabled=true; sl.style.opacity='0.35'; sl.title='\u5176\u4ed6\u4e09\u9879\u5df2\u8fbe100%\uff0c\u65e0\u6cd5\u5206\u914d'; }
+    else { sl.disabled=false; sl.style.opacity='1'; sl.title=''; }
+  }
 }
 
 /* ─── 表单验证 ─── */
@@ -2257,26 +2223,26 @@ async function adminSetSellTax() {
 // 当前链上实际的 Bps 值（从 adminRefreshStatus 读取后缓存）
 let _adminAllocCache = { marketingBps: 0, burnBps: 0, dividendBps: 0, liquidityBps: 0 };
 
-// 四个滑块的 ID 映射
-const _allocSliderIds = ['admin-mkt-bps', 'admin-burn-bps', 'admin-div-bps', 'admin-liq-bps'];
-const _allocPctIds   = ['admin-mkt-pct', 'admin-burn-pct', 'admin-div-pct', 'admin-liq-pct'];
-const _allocKeys      = ['mkt',        'burn',          'div',           'liq'];
+// 管理面板四个滑块的 ID 映射
+const _adminAllocSliderIds = ['admin-mkt-bps', 'admin-burn-bps', 'admin-div-bps', 'admin-liq-bps'];
+const _adminAllocPctIds   = ['admin-mkt-pct', 'admin-burn-pct', 'admin-div-pct', 'admin-liq-pct'];
+const _adminAllocKeys     = ['mkt','burn','div','liq'];
 
 function adminAllocUpdate(changedKey) {
-  const vals = _allocSliderIds.map(id => parseInt(document.getElementById(id).value) || 0);
-  const idx = _allocKeys.indexOf(changedKey);
+  const vals = _adminAllocSliderIds.map(id => parseInt(document.getElementById(id).value) || 0);
+  const idx = _adminAllocKeys.indexOf(changedKey);
   const othersTotal = vals.reduce((s, v, i) => i === idx ? s : s + v, 0);
   const maxAllowed = Math.max(0, 10000 - othersTotal);
 
   // 如果当前值超出允许范围，强制回弹
   if (vals[idx] > maxAllowed) {
     vals[idx] = maxAllowed;
-    document.getElementById(_allocSliderIds[idx]).value = maxAllowed;
+    document.getElementById(_adminAllocSliderIds[idx]).value = maxAllowed;
   }
 
   // 更新显示
   for (let i = 0; i < 4; i++) {
-    document.getElementById(_allocPctIds[i]).textContent = (vals[i] / 100).toFixed(0) + '%';
+    document.getElementById(_adminAllocPctIds[i]).textContent = (vals[i] / 100).toFixed(0) + '%';
   }
 
   const total = vals[0] + vals[1] + vals[2] + vals[3];
@@ -2303,7 +2269,7 @@ function adminAllocUpdate(changedKey) {
 
   // 🔑 核心：动态限制每个滑块的最大值，已满的锁死
   for (let i = 0; i < 4; i++) {
-    const slider = document.getElementById(_allocSliderIds[i]);
+    const slider = document.getElementById(_adminAllocSliderIds[i]);
     const othersSumForThis = vals.reduce((s, v, j) => j === i ? s : s + v, 0);
     const thisMax = Math.max(0, 10000 - othersSumForThis);
     slider.max = thisMax;
