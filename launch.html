@@ -2193,32 +2193,67 @@ async function adminSetSellTax() {
 // 当前链上实际的 Bps 值（从 adminRefreshStatus 读取后缓存）
 let _adminAllocCache = { marketingBps: 0, burnBps: 0, dividendBps: 0, liquidityBps: 0 };
 
+// 四个滑块的 ID 映射
+const _allocSliderIds = ['admin-mkt-bps', 'admin-burn-bps', 'admin-div-bps', 'admin-liq-bps'];
+const _allocPctIds   = ['admin-mkt-pct', 'admin-burn-pct', 'admin-div-pct', 'admin-liq-pct'];
+const _allocKeys      = ['mkt',        'burn',          'div',           'liq'];
+
 function adminAllocUpdate(changedKey) {
-  const mkt = parseInt(document.getElementById('admin-mkt-bps').value) || 0;
-  const burn = parseInt(document.getElementById('admin-burn-bps').value) || 0;
-  const div = parseInt(document.getElementById('admin-div-bps').value) || 0;
-  const liq = parseInt(document.getElementById('admin-liq-bps').value) || 0;
+  const vals = _allocSliderIds.map(id => parseInt(document.getElementById(id).value) || 0);
+  const idx = _allocKeys.indexOf(changedKey);
+  const othersTotal = vals.reduce((s, v, i) => i === idx ? s : s + v, 0);
+  const maxAllowed = Math.max(0, 10000 - othersTotal);
 
-  document.getElementById('admin-mkt-pct').textContent = (mkt / 100).toFixed(0) + '%';
-  document.getElementById('admin-burn-pct').textContent = (burn / 100).toFixed(0) + '%';
-  document.getElementById('admin-div-pct').textContent = (div / 100).toFixed(0) + '%';
-  document.getElementById('admin-liq-pct').textContent = (liq / 100).toFixed(0) + '%';
+  // 如果当前值超出允许范围，强制回弹
+  if (vals[idx] > maxAllowed) {
+    vals[idx] = maxAllowed;
+    document.getElementById(_allocSliderIds[idx]).value = maxAllowed;
+  }
 
-  const total = mkt + burn + div + liq;
-  const totalPct = (total / 100).toFixed(0);
-  document.getElementById('admin-alloc-sum').textContent = '合计: ' + totalPct + '%';
-  document.getElementById('admin-alloc-total-fill').style.width = Math.min(totalPct, 100) + '%';
+  // 更新显示
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(_allocPctIds[i]).textContent = (vals[i] / 100).toFixed(0) + '%';
+  }
 
+  const total = vals[0] + vals[1] + vals[2] + vals[3];
   const remain = 10000 - total;
+
+  // 进度条
+  document.getElementById('admin-alloc-sum').textContent = '合计: ' + (total/100).toFixed(0) + '%';
+  document.getElementById('admin-alloc-total-fill').style.width = Math.min(total/100, 100) + '%';
+
   const remainEl = document.getElementById('admin-alloc-remain');
-  if (remain >= 0) {
-    remainEl.textContent = '剩余: ' + (remain / 100).toFixed(0) + '%';
+  if (remain > 0) {
+    remainEl.textContent = '剩余: ' + (remain/100).toFixed(0) + '%';
     remainEl.style.color = '#22c55e';
     document.getElementById('admin-alloc-total-fill').style.background = 'linear-gradient(90deg,#22c55e 0%,#f59e0b 80%,#ef4444 100%)';
+  } else if (remain === 0) {
+    remainEl.textContent = '已满 ✅';
+    remainEl.style.color = '#fbbf24';
+    document.getElementById('admin-alloc-total-fill').style.background = '#fbbf24';
   } else {
-    remainEl.textContent = '超出: ' + ((-remain) / 100).toFixed(0) + '% ⚠️';
+    remainEl.textContent = '超出: ' + ((-remain)/100).toFixed(0) + '% ⚠️';
     remainEl.style.color = '#ef4444';
     document.getElementById('admin-alloc-total-fill').style.background = '#ef4444';
+  }
+
+  // 🔑 核心：动态限制每个滑块的最大值，已满的锁死
+  for (let i = 0; i < 4; i++) {
+    const slider = document.getElementById(_allocSliderIds[i]);
+    const othersSumForThis = vals.reduce((s, v, j) => j === i ? s : s + v, 0);
+    const thisMax = Math.max(0, 10000 - othersSumForThis);
+    slider.max = thisMax;
+
+    // 剩余空间为 0 且当前值已经是最大 → 禁用其他滑块
+    if (thisMax === 0 && vals[i] === 0) {
+      slider.disabled = true;
+      slider.style.opacity = '0.35';
+      slider.title = '其他三项已达 100%，无法再分配';
+    } else {
+      slider.disabled = false;
+      slider.style.opacity = '1';
+      slider.title = '';
+    }
   }
 }
 
@@ -2237,13 +2272,6 @@ async function adminSaveAlloc() {
   if (!confirm('确认保存分配比例？\\n📢 营销: '+(mkt/100)+'% 🔥 销毁: '+(burn/100)+'% 💰 分红: '+(div/100)+'% 💧 流动性: '+(liq/100)+'%')) return;
 
   try {
-    // 只实际改变了才调用合约（节省 gas）
-    if (mkt !== _adminAllocCache.marketingBps) {
-      adminLog('⏳ 设置营销比例: ' + (mkt/100) + '%...');
-      await _adminContract.setMarketingBps(mkt); await _adminContract.deployTransaction; // wait for previous tx
-      // actually we need to wait properly
-    }
-    // 用更安全的方式：逐个调用并等待
     const calls = [];
     if (mkt !== _adminAllocCache.marketingBps) calls.push(['setMarketingBps', mkt]);
     if (burn !== _adminAllocCache.burnBps) calls.push(['setBurnBps', burn]);
