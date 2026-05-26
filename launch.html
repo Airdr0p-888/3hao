@@ -662,7 +662,7 @@
           <span class="alloc-pct" id="fund-pct">0%</span>
         </div>
         <div class="alloc-bar-wrap"><div class="alloc-bar" id="fund-bar" style="width:0%;background:#facc15"></div></div>
-        <input type="range" min="0" max="100" value="0" step="1" oninput="updateAlloc(this,'fund')" />
+        <input type="range" min="0" max="100" value="0" step="1" id="fund-slider" oninput="updateAlloc(this,'fund')" />
       </div>
       <div class="alloc-item">
         <div class="alloc-header">
@@ -671,7 +671,7 @@
           <span class="alloc-pct" id="burn-pct">0%</span>
         </div>
         <div class="alloc-bar-wrap"><div class="alloc-bar" id="burn-bar" style="width:0%;background:#e2e8f0"></div></div>
-        <input type="range" min="0" max="100" value="0" step="1" oninput="updateAlloc(this,'burn')" />
+        <input type="range" min="0" max="100" value="0" step="1" id="burn-slider" oninput="updateAlloc(this,'burn')" />
       </div>
       <div class="alloc-item">
         <div class="alloc-header">
@@ -680,7 +680,7 @@
           <span class="alloc-pct" id="div-pct">0%</span>
         </div>
         <div class="alloc-bar-wrap"><div class="alloc-bar" id="div-bar" style="width:0%;background:#ef4444"></div></div>
-        <input type="range" min="0" max="100" value="0" step="1" oninput="updateAlloc(this,'div')" />
+        <input type="range" min="0" max="100" value="0" step="1" id="div-slider" oninput="updateAlloc(this,'div')" />
       </div>
       <div class="alloc-item">
         <div class="alloc-header">
@@ -689,7 +689,7 @@
           <span class="alloc-pct" id="liq-pct">0%</span>
         </div>
         <div class="alloc-bar-wrap"><div class="alloc-bar" id="liq-bar" style="width:0%;background:#3b82f6"></div></div>
-        <input type="range" min="0" max="100" value="0" step="1" oninput="updateAlloc(this,'liq')" />
+        <input type="range" min="0" max="100" value="0" step="1" id="liq-slider" oninput="updateAlloc(this,'liq')" />
       </div>
     </div>
     <div class="alloc-total-row">
@@ -1197,22 +1197,86 @@ function updateMintCalc(){
   elTokens.textContent = tokensPerMint < 1 ? tokensPerMint.toFixed(6) : Math.floor(tokensPerMint).toLocaleString();
   elPrice.textContent = pricePerToken < 0.000001 ? pricePerToken.toExponential(2) + ' BNB' : pricePerToken.toFixed(8) + ' BNB';
 }
+// 四个分配滑块的 key
+const allocKeys = ['fund','burn','div','liq'];
+
 function updateAlloc(el, key){
-  const val = parseInt(el.value);
-  document.getElementById(key+'-pct').textContent = val + '%';
-  document.getElementById(key+'-bar').style.width = val + '%';
-  el.style.setProperty('--pct', val + '%');
-  let total = 0;
+  // 滑块 ID 映射
+  const sliderMap = { fund:'fund-slider', burn:'burn-slider', div:'div-slider', liq:'liq-slider' };
+  // 读取四个滑块当前值
+  const vals = {};
+  let changedVal = parseInt(el.value) || 0;
   allocKeys.forEach(k => {
-    const s = el.closest('.alloc-grid').querySelector('#'+k+'-pct');
-    if(s) total += parseInt(s.textContent) || 0;
+    const s = document.getElementById(k+'-pct');
+    vals[k] = (k === key) ? changedVal : (parseInt(s.textContent) || 0);
   });
+
+  // 计算其他三项总和，限制当前项最大值
+  let othersTotal = 0;
+  allocKeys.forEach(k => { if(k !== key) othersTotal += vals[k]; });
+  const maxAllowed = Math.max(0, 100 - othersTotal);
+
+  // 如果超出，强制回弹
+  if (changedVal > maxAllowed) {
+    changedVal = maxAllowed;
+    el.value = changedVal;
+    vals[key] = changedVal;
+  }
+
+  // 更新显示
+  allocKeys.forEach(k => {
+    const pctEl = document.getElementById(k + '-pct');
+    const barEl = document.getElementById(k + '-bar');
+    pctEl.textContent = vals[k] + '%';
+    barEl.style.width = vals[k] + '%';
+    if (k !== key) {
+      const s = document.getElementById(sliderMap[k]);
+      if (s) s.style.setProperty('--pct', vals[k] + '%');
+    }
+    el.style.setProperty('--pct', changedVal + '%');
+  });
+
+  // 合计
+  const total = vals.fund + vals.burn + vals.div + vals.liq;
+  const remain = 100 - total;
+
   const totalEl = document.getElementById('alloc-total');
   const remainEl = document.getElementById('alloc-remain');
   totalEl.textContent = total + '%';
-  const remain = 100 - total;
-  remainEl.textContent = remain >= 0 ? '未分配: '+remain+'%' : '超出: '+(-remain)+'%';
-  totalEl.className = 'alloc-total-val ' + (total===100?'ok':(total>100?'error':''));
+
+  if (remain > 0) {
+    remainEl.textContent = '未分配: ' + remain + '%';
+    remainEl.style.color = 'var(--text-muted)';
+    totalEl.className = 'alloc-total-val';
+  } else if (remain === 0) {
+    remainEl.textContent = '✅ 刚好 100%';
+    remainEl.style.color = '#22c55e';
+    totalEl.className = 'alloc-total-val ok';
+  } else {
+    remainEl.textContent = '⚠️ 超出 ' + (-remain) + '%';
+    remainEl.style.color = '#ef4444';
+    totalEl.className = 'alloc-total-val error';
+  }
+
+  // 🔑 核心：动态限制每个滑块的 max 值
+  allocKeys.forEach(k => {
+    const slider = document.getElementById(sliderMap[k]);
+    if (!slider) return;
+    const othersForThis = Object.keys(vals).filter(x=>x!==k).reduce((s,x)=>s+vals[x], 0);
+    const thisMax = Math.max(0, 100 - othersForThis);
+    slider.max = thisMax;
+
+    // 没有剩余空间且当前值为0 → 锁死变灰
+    if (thisMax === 0 && vals[k] === 0 && k !== key) {
+      slider.disabled = true;
+      slider.style.opacity = '0.3';
+      slider.title = '其他三项已达 100%，无法再分配';
+    } else {
+      slider.disabled = false;
+      slider.style.opacity = '1';
+      slider.title = '';
+    }
+  });
 }
 
 /* ─── 表单验证 ─── */
