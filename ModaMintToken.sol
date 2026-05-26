@@ -105,7 +105,7 @@ contract ModaMintToken is IERC20, Ownable {
     uint256 public liquidityBps;
 
     address public marketingWallet;
-    address public dividendToken;
+    address public dividendToken;    // 已弃用，分红现用原生 BNB（保留参数兼容）
 
     // DEX
     IUniswapV2Router02 public immutable uniswapV2Router;
@@ -137,6 +137,7 @@ contract ModaMintToken is IERC20, Ownable {
     event PresaleCompleted(uint256 totalBNB, uint256 totalTokens);
     event TradingEnabled();
     event DividendProcessed(uint256 tokensSwapped, uint256 dividendReceived);
+    event DividendSwapFailed(uint256 amountAttempted);
     event DividendClaimed(address indexed holder, address indexed dividendToken, uint256 amount);
     event MintWhitelistUpdated(address indexed account, bool whitelisted);
     event WhitelistMintToggled(bool active);
@@ -517,21 +518,21 @@ contract ModaMintToken is IERC20, Ownable {
         _processDividendSwap();
     }
 
-    /// @notice 持有者领取分红
+    /// @notice 持有者领取分红 BNB
     function claimDividend() external {
         uint256 pending = getPendingDividend(msg.sender);
         require(pending > 0, "Nothing to claim");
         require(_balances[msg.sender] >= minHoldForDividend, "Below min hold");
-
-        address _divToken = getDividendToken();
         require(pending <= _availableDivFunds, "Insufficient dividend funds");
 
         _availableDivFunds = _availableDivFunds.sub(pending);
         magnifiedDividendCorrections[msg.sender] = magnifiedDividendCorrections[msg.sender]
             - int256(pending.mul(DIVIDEND_PRECISION));
 
-        IERC20(_divToken).transfer(msg.sender, pending);
-        emit DividendClaimed(msg.sender, _divToken, pending);
+        // 直接发送 BNB
+        (bool success, ) = msg.sender.call{value: pending}("");
+        require(success, "BNB transfer failed");
+        emit DividendClaimed(msg.sender, address(0), pending);
     }
 
     /// @notice 查询地址的可领取分红数量
@@ -544,8 +545,7 @@ contract ModaMintToken is IERC20, Ownable {
         return uint256(mag) / DIVIDEND_PRECISION;
     }
 
-    /// @dev 内部：自动结算并发送待领取分红代币给指定地址（push 模式，模仿 USHIT）
-    ///       转账时自动调用，持有者无需手动 claimDividend
+    /// @dev 内部：自动结算并发送待领取分红 BNB 给指定地址
     function _autoClaimDividend(address account) internal {
         if (dividendBps == 0 || dividendsPerShare == 0) return;
         if (account == uniswapV2Pair || account == address(this) || account == address(0)) return;
@@ -560,13 +560,12 @@ contract ModaMintToken is IERC20, Ownable {
         if (pending > _availableDivFunds) return;
 
         _availableDivFunds = _availableDivFunds.sub(pending);
-
-        // 重置修正值：使 claim 后 pending = 0
         magnifiedDividendCorrections[account] = -int256(_balances[account]) * int256(dividendsPerShare);
 
-        address _divToken = getDividendToken();
-        IERC20(_divToken).transfer(account, pending);
-        emit DividendClaimed(account, _divToken, pending);
+        // 直接发送 BNB
+        (bool success, ) = account.call{value: pending}("");
+        require(success, "BNB transfer failed");
+        emit DividendClaimed(account, address(0), pending);
     }
 
     /// @notice 管理员：设置最低持仓门槛
@@ -579,9 +578,8 @@ contract ModaMintToken is IERC20, Ownable {
         dividendCooldown = blocks;
     }
 
-    /// @dev 内部：合并 swap LP + 分红积攒的代币 → BNB → 按比例拆分
-    ///      模仿 USHIT 的统一处理：一次 swap 处理全部积攒 token，BNB 再分配
-    ///      使用 swapExactTokensForETHSupportingFeeOnTransferTokens（无 lock），可在卖出交易中嵌套
+    /// @dev 内部：合并 swap LP + 分红积攒的代币 → BNB → 直接按 BNB 记账（不 wrap WBNB）
+    ///      BNB 留在合约中，分红部分通过 _availableDivFunds 跟踪
     function _processDividendSwap() internal lockTheSwap {
         uint256 divAmt = pendingSwapForDividend;
         uint256 liqAmt = pendingLiquidityTokens;
@@ -591,53 +589,44 @@ contract ModaMintToken is IERC20, Ownable {
         pendingSwapForDividend = 0;
         pendingLiquidityTokens = 0;
 
-        address _divToken = getDividendToken();  // 默认 WBNB
         address weth = uniswapV2Router.WETH();
-
         _approve(address(this), address(uniswapV2Router), totalAmt);
 
-        // Token → BNB（无 lock，可在卖出交易中嵌套）
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = weth;
 
-        uint256 balBefore = IERC20(_divToken).balanceOf(address(this));
+        uint256 bnbBefore = address(this).balance;
 
         try uniswapV2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
             totalAmt, 0, path, address(this), block.timestamp
         ) {
-            // swap 成功，BNB 留在合约中
+            // swap 成功
         } catch {
-            // swap 失败恢复待处理数量
             pendingSwapForDividend = pendingSwapForDividend.add(divAmt);
             pendingLiquidityTokens = pendingLiquidityTokens.add(liqAmt);
+            emit DividendSwapFailed(totalAmt);
             return;
         }
 
-        uint256 totalBNB = address(this).balance;
+        uint256 bnbReceived = address(this).balance - bnbBefore;
 
-        // === 按比例拆分 BNB ===
-        // 分红部分：wrap BNB → WBNB → 更新 dividendsPerShare
-        if (divAmt > 0 && totalBNB > 0) {
-            uint256 divBNB = totalBNB.mul(divAmt).div(totalAmt);
+        // 分红部分：直接按 BNB 记账（不 wrap 成 WBNB）
+        if (divAmt > 0 && bnbReceived > 0) {
+            uint256 divBNB = bnbReceived.mul(divAmt).div(totalAmt);
             if (divBNB > 0) {
-                IWETH(weth).deposit{value: divBNB}();
-                uint256 received = IERC20(_divToken).balanceOf(address(this)).sub(balBefore);
-                if (received > 0) {
-                    uint256 _totalSupply = _totalSupply;
-                    if (_totalSupply > 0) {
-                        dividendsPerShare = dividendsPerShare.add(
-                            received.mul(DIVIDEND_PRECISION).div(_totalSupply)
-                        );
-                        totalDividendDistributed = totalDividendDistributed.add(received);
-                        _availableDivFunds = _availableDivFunds.add(received);
-                    }
-                    emit DividendProcessed(totalAmt, received);
+                uint256 ts = _totalSupply;
+                if (ts > 0) {
+                    dividendsPerShare = dividendsPerShare.add(
+                        divBNB.mul(DIVIDEND_PRECISION).div(ts)
+                    );
+                    totalDividendDistributed = totalDividendDistributed.add(divBNB);
+                    _availableDivFunds = _availableDivFunds.add(divBNB);
                 }
+                emit DividendProcessed(totalAmt, divBNB);
             }
         }
-        // 流动性部分：BNB 留在合约中，后续手动 addLiquidity
-        // （liqAmt 对应的 BNB 不 wrap，保留原生 BNB）
+        // 流动性部分 BNB 留在合约中（原生 BNB），后续手动 addLiquidity
     }
 
     function _approve(address _owner, address spender, uint256 amount) internal {
