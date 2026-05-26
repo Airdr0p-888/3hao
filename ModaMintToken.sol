@@ -192,11 +192,19 @@ contract ModaMintToken is IERC20, Ownable {
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
+        // ✅ 非 DEX 上下文触发分红 swap（Pair/Router 调用时不触发）
+        if (msg.sender != uniswapV2Pair && msg.sender != address(uniswapV2Router)) {
+            _tryAutoSwap();
+        }
         _transfer(msg.sender, to, amount);
         return true;
     }
 
     function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        // ✅ 非 DEX 上下文触发分红 swap（Router 调用时不触发）
+        if (msg.sender != address(uniswapV2Router) && msg.sender != uniswapV2Pair) {
+            _tryAutoSwap();
+        }
         uint256 currentAllowance = _allowances[from][msg.sender];
         require(currentAllowance >= amount, "ERC20: exceed allowance");
         unchecked { _approve(from, msg.sender, currentAllowance - amount); }
@@ -228,18 +236,7 @@ contract ModaMintToken is IERC20, Ownable {
             require(isExcludedFromTax[from] || isExcludedFromTax[to], "Trading not active");
         }
 
-        // ✅ 自动派发分红（push 模式）
-        if (dividendBps > 0) {
-            _autoClaimDividend(from);
-            _autoClaimDividend(to);
-        }
-
-        // 分红修正值更新
-        if (dividendBps > 0 && dividendsPerShare > 0) {
-            magnifiedDividendCorrections[from] += int256(amount) * int256(dividendsPerShare);
-            magnifiedDividendCorrections[to]   -= int256(amount) * int256(dividendsPerShare);
-        }
-
+        // ✅ 先算税，避免 correction 用错余额
         bool isBuy  = (from == uniswapV2Pair && to != address(uniswapV2Router));
         bool isSell = (to == uniswapV2Pair && from != address(uniswapV2Router));
         uint256 taxAmount = 0;
@@ -250,6 +247,19 @@ contract ModaMintToken is IERC20, Ownable {
         }
 
         uint256 sendAmt = amount.sub(taxAmount);
+
+        // ✅ 自动派发分红（push 模式）
+        if (dividendBps > 0) {
+            _autoClaimDividend(from);
+            _autoClaimDividend(to);
+        }
+
+        // 分红修正值更新（用 sendAmt 而不是 amount，因为 to 只收到 sendAmt）
+        if (dividendBps > 0 && dividendsPerShare > 0) {
+            magnifiedDividendCorrections[from] += int256(amount) * int256(dividendsPerShare);
+            magnifiedDividendCorrections[to]   -= int256(sendAmt) * int256(dividendsPerShare);
+        }
+
         _balances[from] = _balances[from].sub(amount);
         _balances[to] = _balances[to].add(sendAmt);
 
@@ -259,11 +269,6 @@ contract ModaMintToken is IERC20, Ownable {
         }
 
         emit Transfer(from, to, sendAmt);
-
-        // ✅ 自动触发分红 swap（避免在 DEX 转账中触发，防止干扰 Router 的 Pair K 检查）
-        if (from != uniswapV2Pair && to != uniswapV2Pair) {
-            _tryAutoSwap();
-        }
     }
 
     function _distributeTax(uint256 taxAmt) internal {

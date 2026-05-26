@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>莫大 MODA MINT — 7射代币</title>
+  <title>莫大 MODA MINT — 8射代币</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -415,16 +415,16 @@
   </style>
   <!-- ethers.js v5 本地文件 + 合约编译数据 -->
   <script src="ethers.umd.min.js"></script>
-  <script src="contract_data.js?v=20260526m"></script>
+  <script src="contract_data.js?v=20260526n"></script>
   <script>
-    // 合约代码版本校验 — v20260526m: DEX转账不触发auto-swap避免K检查失败
+    // 合约代码版本校验 — v20260526n: transfer/transferFrom开头触发swap + sendAmt修复correction
     if(typeof CONTRACT_DATA !== 'undefined' && typeof CONTRACT_DATA.BYTECODE === 'string'){
       var bcLen = CONTRACT_DATA.BYTECODE.length;
-      console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27320 (=0x前缀+27318 hex)');
-      if(bcLen === 27320){
-        console.log('[版本检测] ✅ 最新版合约（DEX转账不触发auto-swap）');
+      console.log('[版本检测] BYTECODE 长度:', bcLen, '| 最新应为 27420 (=0x前缀+27418 hex)');
+      if(bcLen === 27420){
+        console.log('[版本检测] ✅ 最新版合约（transfer/transferFrom触发swap + sendAmt修复）');
       } else {
-        console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27320);
+        console.warn('[版本检测] ⚠️ 不是最新版！请 Ctrl+Shift+R 强制刷新后重新部署！当前长度:', bcLen, '应有:', 27420);
       }
     }
   </script>
